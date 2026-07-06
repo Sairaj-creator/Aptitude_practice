@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  name         String?
+  progress     Progress[]
+  attempts     TestAttempt[]
+  tcsAttempts  TcsNqtAttempt[]
+  bookmarks    Bookmark[]
+  settings     UserSettings?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  topics    Topic[]
+  createdAt DateTime @default(now())
+}
+
+model Topic {
+  id        String     @id @default(cuid())
+  subjectId String
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  questions Question[]
+  progress  Progress[]
+
+  @@unique([subjectId, slug])
+  @@index([subjectId])
+}
+
+model Question {
+  id               String      @id @default(cuid())
+  topicId          String
+  topic            Topic       @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  text             String
+  normalizedHash   String      @unique
+  options          Json
+  correctAnswer    String
+  explanation      String
+  shortTrick       String?
+  commonMistake    String?
+  formula          String?
+  difficulty       Difficulty
+  estimatedTimeSec Int
+  companyTags      String[]
+  answers          Answer[]
+  bookmarks        Bookmark[]
+  createdAt        DateTime    @default(now())
+
+  @@index([topicId, difficulty])
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+  EXPERT
+}
+
+model Progress {
+  id              String     @id @default(cuid())
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId         String
+  topic           Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  difficulty      Difficulty
+  accuracy        Float      @default(0)
+  questionsSolved Int        @default(0)
+  unlocked        Boolean    @default(false)
+  mastered        Boolean    @default(false)
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([userId, topicId, difficulty])
+  @@index([userId, topicId])
+}
+
+model Test {
+  id             String         @id @default(cuid())
+  title          String
+  mode           TestMode
+  timeLimitSec   Int
+  totalQuestions Int
+  questions      TestQuestion[]
+  attempts       TestAttempt[]
+  createdAt      DateTime       @default(now())
+}
+
+enum TestMode {
+  MOCK
+  ADAPTIVE
+  COMPANY
+}
+
+model TestQuestion {
+  id         String   @id @default(cuid())
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  questionId String
+  order      Int
+
+  @@unique([testId, order])
+}
+
+model TestAttempt {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testId      String?
+  test        Test?           @relation(fields: [testId], references: [id])
+  score       Float           @default(0)
+  status      AttemptStatus   @default(IN_PROGRESS)
+  answers     Answer[]
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Answer {
+  id            String      @id @default(cuid())
+  attemptId     String
+  attempt       TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question    @relation(fields: [questionId], references: [id])
+  selected      String
+  isCorrect     Boolean
+  timeTakenSec  Int
+  explanationAck Boolean   @default(false)
+  createdAt     DateTime   @default(now())
+}
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, questionId])
+  @@index([userId])
+}
+
+model RevisionQueue {
+  id         String     @id @default(cuid())
+  userId     String
+  topicId    String?
+  questionId String?
+  source     String
+  priority   Int        @default(2)
+  dueAt      DateTime
+  completed  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, completed, dueAt])
+}
+
+model CompanyTestConfig {
+  id             String   @id @default(cuid())
+  companyName    String   @unique
+  topicWeights   Json
+  totalQuestions Int
+  timeLimitSec   Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ExamPatternConfig {
+  id        String   @id @default(cuid())
+  exam      String
+  version   String   @default("default")
+  config    Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([exam, isActive])
+}
+
+model TcsNqtSection {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String          @unique
+  category      TcsNqtCategory
+  questionCount Int
+  timeLimitSec  Int
+  order         Int
+  questions     TcsNqtQuestion[]
+
+  @@index([category, order])
+}
+
+enum TcsNqtCategory {
+  FOUNDATION
+  ADVANCED
+  CODING
+}
+
+model TcsNqtQuestion {
+  id            String        @id @default(cuid())
+  sectionId     String
+  section       TcsNqtSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  questionText  String
+  options       Json?
+  correctAnswer String?
+  explanation   String
+  shortTrick    String?
+  difficulty    Difficulty
+  isCoding      Boolean       @default(false)
+  starterCode   String?
+  testCases     Json?
+  tags          String[]
+  createdAt     DateTime      @default(now())
+}
+
+model TcsNqtAttempt {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variant        TcsNqtVariant
+  startedAt      DateTime      @default(now())
+  completedAt    DateTime?
+  currentOrder   Int           @default(1)
+  sectionResults Json          @default("{}")
+  overallScore   Float?
+  status         AttemptStatus @default(IN_PROGRESS)
+
+  @@index([userId, startedAt])
+}
+
+enum TcsNqtVariant {
+  FOUNDATION_ONLY
+  FOUNDATION_PLUS_ADVANCED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model AIQuestionGenerationLog {
+  id           String   @id @default(cuid())
+  topicId      String
+  difficulty   Difficulty
+  promptHash   String
+  generated    Int
+  accepted     Int
+  rejected     Int
+  provider     String   @default("gemini-flash")
+  createdAt    DateTime @default(now())
+
+  @@index([topicId, difficulty, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model UserSettings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyGoalQuestions Int      @default(20)
+  reminderEnabled    Boolean  @default(true)
+  theme              String   @default("system")
+  updatedAt          DateTime @updatedAt
+}

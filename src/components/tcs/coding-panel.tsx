@@ -1,0 +1,90 @@
+"use client";
+
+import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
+import { cpp } from "@codemirror/lang-cpp";
+import { java } from "@codemirror/lang-java";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { Play, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { tcsNqtQuestions } from "@/lib/data/tcs-nqt";
+
+const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
+
+type Language = "c" | "cpp" | "java" | "python";
+
+export function CodingPanel({ attemptId }: { attemptId?: string }) {
+  const question = tcsNqtQuestions.find((item) => item.isCoding);
+  const [language, setLanguage] = useState<Language>("python");
+  const [code, setCode] = useState(question?.starterCode ?? "");
+  const [output, setOutput] = useState<string>("No run yet");
+  const extensions = useMemo(() => {
+    if (language === "python") return [python()];
+    if (language === "java") return [java()];
+    if (language === "cpp" || language === "c") return [cpp()];
+    return [javascript()];
+  }, [language]);
+
+  async function run() {
+    const url = attemptId ? `/api/tcs-nqt/attempt/${attemptId}/coding/run` : "/api/tcs-nqt/attempt/local/coding/run";
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language, code, questionId: question?.id })
+    });
+    const data = await response.json();
+    setOutput(`${data.passed}/${data.total} sample cases passed`);
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="rounded-lg border border-border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Badge variant="secondary">Coding</Badge>
+            <h1 className="mt-3 text-2xl font-bold">{question?.questionText}</h1>
+          </div>
+          <select
+            value={language}
+            onChange={(event) => setLanguage(event.target.value as Language)}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="java">Java</option>
+            <option value="python">Python</option>
+          </select>
+        </div>
+        <div className="mt-5 overflow-hidden rounded-md border border-border">
+          <CodeMirror value={code} height="420px" extensions={extensions} onChange={setCode} basicSetup={{ lineNumbers: true }} />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Button onClick={run}>
+            <Play className="h-4 w-4" />
+            Run Samples
+          </Button>
+          <Button variant="outline">
+            <Send className="h-4 w-4" />
+            Submit
+          </Button>
+        </div>
+      </div>
+      <aside className="rounded-lg border border-border bg-card p-5">
+        <div className="text-sm font-semibold">Sample Cases</div>
+        <div className="mt-3 space-y-3">
+          {question?.testCases?.map((testCase) => (
+            <div key={testCase.input} className="rounded-md border border-border bg-background p-3 text-sm">
+              <div className="text-muted-foreground">Input</div>
+              <pre className="mt-1 rounded-sm bg-muted p-2">{testCase.input}</pre>
+              <div className="mt-2 text-muted-foreground">Expected</div>
+              <pre className="mt-1 rounded-sm bg-muted p-2">{testCase.expectedOutput}</pre>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-md bg-secondary p-3 text-sm text-secondary-foreground">{output}</div>
+      </aside>
+    </div>
+  );
+}
