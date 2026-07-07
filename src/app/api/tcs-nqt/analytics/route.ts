@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { listStoredAttempts } from "@/lib/tcs-nqt-store";
 
 export async function GET() {
-  const attempts = listStoredAttempts();
+  const attempts = await listStoredAttempts();
   return NextResponse.json({
     attempts,
     trend: attempts.map((attempt, index) => ({

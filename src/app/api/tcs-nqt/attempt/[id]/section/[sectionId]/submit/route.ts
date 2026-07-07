@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { submitStoredSection } from "@/lib/tcs-nqt-store";
 import { tcsSectionSubmissionSchema } from "@/lib/validation";
+import { getServerUser } from "@/lib/auth-server";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string; sectionId: string }> }) {
   const { id, sectionId } = await context.params;
@@ -12,7 +13,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   try {
-    const result = submitStoredSection(id, sectionId, parsed.data.answers, parsed.data.timeTakenSec);
+    const result = await submitStoredSection(id, sectionId, parsed.data.answers, parsed.data.timeTakenSec);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 400 });

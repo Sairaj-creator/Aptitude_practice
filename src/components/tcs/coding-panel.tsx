@@ -20,6 +20,9 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
   const [language, setLanguage] = useState<Language>("python");
   const [code, setCode] = useState(question?.starterCode ?? "");
   const [output, setOutput] = useState<string>("No run yet");
+  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const extensions = useMemo(() => {
     if (language === "python") return [python()];
     if (language === "java") return [java()];
@@ -28,14 +31,53 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
   }, [language]);
 
   async function run() {
-    const url = attemptId ? `/api/tcs-nqt/attempt/${attemptId}/coding/run` : "/api/tcs-nqt/attempt/local/coding/run";
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ language, code, questionId: question?.id })
-    });
-    const data = await response.json();
-    setOutput(`${data.passed}/${data.total} sample cases passed`);
+    setRunning(true);
+    setOutput("Running sample test cases...");
+    try {
+      const url = attemptId ? `/api/tcs-nqt/attempt/${attemptId}/coding/run` : "/api/tcs-nqt/attempt/local/coding/run";
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language, code, questionId: question?.id })
+      });
+      const data = await response.json();
+      if (data.error) {
+        setOutput(`Execution Error: ${data.error}`);
+      } else {
+        setOutput(`${data.passed}/${data.total} sample cases passed`);
+      }
+    } catch (err) {
+      setOutput("Failed to run code sandbox");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function submit() {
+    setSubmitting(true);
+    setOutput("Submitting code...");
+    try {
+      if (!attemptId) {
+        setOutput("Submitted local preview (No active attempt)");
+        setSubmitting(false);
+        return;
+      }
+      const response = await fetch(`/api/tcs-nqt/attempt/${attemptId}/coding/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language, code, questionId: question?.id })
+      });
+      const data = await response.json();
+      if (data.error) {
+        setOutput(`Submission Error: ${data.error}`);
+      } else {
+        setOutput(`Submitted! ${data.passed}/${data.total} sample cases passed`);
+      }
+    } catch (err) {
+      setOutput("Failed to submit code");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -49,7 +91,7 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
           <select
             value={language}
             onChange={(event) => setLanguage(event.target.value as Language)}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm bg-card"
           >
             <option value="c">C</option>
             <option value="cpp">C++</option>
@@ -61,13 +103,13 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
           <CodeMirror value={code} height="420px" extensions={extensions} onChange={setCode} basicSetup={{ lineNumbers: true }} />
         </div>
         <div className="mt-4 flex gap-2">
-          <Button onClick={run}>
+          <Button onClick={run} disabled={running || submitting}>
             <Play className="h-4 w-4" />
-            Run Samples
+            {running ? "Running..." : "Run Samples"}
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={submit} disabled={running || submitting}>
             <Send className="h-4 w-4" />
-            Submit
+            {submitting ? "Submitting..." : "Submit"}
           </Button>
         </div>
       </div>

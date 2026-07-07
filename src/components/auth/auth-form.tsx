@@ -2,11 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { signIn, signUp, forgotPassword, isSupabaseEnabled } from "@/lib/auth";
 import { authSchema, forgotPasswordSchema, signupSchema } from "@/lib/validation";
 
 type AuthMode = "login" | "signup" | "forgot";
@@ -18,7 +21,11 @@ const schemas = {
 };
 
 export function AuthForm({ mode }: { mode: AuthMode }) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const schema = schemas[mode];
+
   const {
     register,
     handleSubmit,
@@ -28,24 +35,89 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   });
 
   const title = mode === "signup" ? "Create Account" : mode === "forgot" ? "Reset Password" : "Login";
+  const supabaseActive = isSupabaseEnabled();
+
   const description =
     mode === "signup"
-      ? "Email verification is handled by Supabase Auth when keys are configured."
+      ? supabaseActive
+        ? "Email verification is handled by Supabase Auth."
+        : "Creating account in Local Simulated Mode."
       : mode === "forgot"
-        ? "A reset link is sent through Supabase Auth."
-        : "Use email login or Google through Supabase Auth.";
+        ? supabaseActive
+          ? "A reset link will be sent through Supabase Auth."
+          : "Simulating password reset request locally."
+        : supabaseActive
+          ? "Use email login or Google through Supabase Auth."
+          : "Logging in using Local Simulated Mode.";
 
   return (
     <Card className="mx-auto w-full max-w-md">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardDescription>
+          {description}
+          {!supabaseActive && (
+            <span className="mt-1 block text-xs font-semibold text-amber-600">
+              ⚠️ Supabase keys unconfigured. Running in Mock Mode.
+            </span>
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive font-medium">
+            {error}
+          </div>
+        )}
+        {successMessage && (
+          <div className="mb-4 rounded bg-green-500/10 p-3 text-sm text-green-600 font-medium">
+            {successMessage}
+          </div>
+        )}
         <form
           className="space-y-4"
-          onSubmit={handleSubmit(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 250));
+          onSubmit={handleSubmit(async (data) => {
+            setError(null);
+            setSuccessMessage(null);
+            try {
+              if (mode === "signup") {
+                const res = await signUp(data.email, (data as any).name || "", (data as any).password);
+                if (res.error) {
+                  setError(res.error);
+                } else {
+                  setSuccessMessage(
+                    supabaseActive
+                      ? "Account created! Please check your email for a verification link."
+                      : "Account created successfully! Redirecting..."
+                  );
+                  setTimeout(() => router.push(supabaseActive ? "/auth/verify" : "/dashboard"), 1500);
+                }
+              } else if (mode === "login") {
+                const res = await signIn(data.email, (data as any).password);
+                if (res.error) {
+                  setError(res.error);
+                } else {
+                  setSuccessMessage("Logged in successfully! Redirecting...");
+                  setTimeout(() => {
+                    router.push("/dashboard");
+                    router.refresh();
+                  }, 1000);
+                }
+              } else if (mode === "forgot") {
+                const res = await forgotPassword(data.email);
+                if (res.error) {
+                  setError(res.error);
+                } else {
+                  setSuccessMessage(
+                    supabaseActive
+                      ? "Password reset link sent to your email!"
+                      : "Password reset link request simulated successfully!"
+                  );
+                }
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Authentication failed");
+            }
           })}
         >
           {mode === "signup" && (
@@ -72,9 +144,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           </Button>
         </form>
         <div className="mt-4 flex justify-between text-sm text-muted-foreground">
-          <Link href="/auth/login">Login</Link>
-          <Link href="/auth/signup">Signup</Link>
-          <Link href="/auth/forgot-password">Forgot</Link>
+          <Link href="/auth/login" className="hover:underline">Login</Link>
+          <Link href="/auth/signup" className="hover:underline">Signup</Link>
+          <Link href="/auth/forgot-password" className="hover:underline">Forgot</Link>
         </div>
       </CardContent>
     </Card>

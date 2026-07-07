@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 import { startStoredAttempt } from "@/lib/tcs-nqt-store";
 import { tcsVariantSchema } from "@/lib/validation";
+import { getServerUser } from "@/lib/auth-server";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const parsed = tcsVariantSchema.safeParse(body);
+  try {
+    const body = await request.json();
+    const parsed = tcsVariantSchema.safeParse(body);
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const user = await getServerUser();
+    const userId = user?.id || "demo-user";
+
+    const result = await startStoredAttempt(userId, parsed.data.variant);
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
   }
-
-  const result = startStoredAttempt("demo-user", parsed.data.variant);
-  return NextResponse.json(result);
 }

@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { tcsNqtPattern, tcsNqtQuestions, type AttemptStatus, type TcsNqtSectionConfig, type TcsNqtVariant } from "@/lib/data/tcs-nqt";
 
 export type SectionResult = {
@@ -137,9 +140,93 @@ export function estimatePercentile(overallScore: number) {
   return 35;
 }
 
-export function runCodingSamples(code: string, language: string) {
+// Spawn dynamic subprocess to execute Python code
+function executePythonCode(code: string, input: string, timeoutMs = 2000): Promise<{ stdout: string; error?: string }> {
+  return new Promise((resolve) => {
+    const filename = join(process.cwd(), `temp_nqt_${randomUUID()}.py`);
+    try {
+      writeFileSync(filename, code, "utf8");
+    } catch (err) {
+      resolve({ stdout: "", error: "Failed to write temp execution file" });
+      return;
+    }
+
+    const py = spawn("python", [filename]);
+    let stdout = "";
+    let stderr = "";
+
+    const timer = setTimeout(() => {
+      py.kill();
+      try { unlinkSync(filename); } catch {}
+      resolve({ stdout: "", error: "Execution Timeout (Time Limit Exceeded)" });
+    }, timeoutMs);
+
+    py.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    py.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    py.on("close", (code) => {
+      clearTimeout(timer);
+      try { unlinkSync(filename); } catch {}
+      if (code !== 0) {
+        resolve({ stdout: "", error: stderr.trim() || `Process exited with code ${code}` });
+      } else {
+        resolve({ stdout, error: undefined });
+      }
+    });
+
+    py.on("error", (err) => {
+      clearTimeout(timer);
+      try { unlinkSync(filename); } catch {}
+      resolve({ stdout: "", error: err.message });
+    });
+
+    if (input) {
+      py.stdin.write(input + "\n");
+    }
+    py.stdin.end();
+  });
+}
+
+export async function runCodingSamples(code: string, language: string) {
   const codingQuestion = tcsNqtQuestions.find((question) => question.isCoding);
   const cases = codingQuestion?.testCases ?? [];
+
+  if (language.toLowerCase() === "python") {
+    const results = [];
+    let passedCount = 0;
+
+    for (const testCase of cases) {
+      const res = await executePythonCode(code, testCase.input);
+      
+      const actual = res.stdout.trim();
+      const expected = testCase.expectedOutput.trim();
+      const passed = !res.error && actual === expected;
+
+      if (passed) passedCount++;
+
+      results.push({
+        input: testCase.input,
+        expectedOutput: testCase.expectedOutput,
+        actualOutput: res.error ? `Error: ${res.error}` : actual,
+        passed
+      });
+    }
+
+    return {
+      language,
+      sandbox: "local-python",
+      passed: passedCount,
+      total: cases.length,
+      results
+    };
+  }
+
+  // Fallback pattern matching for other languages
   const normalized = code.toLowerCase();
   const looksLikeSumSolution =
     normalized.includes("n * (n + 1)") ||
@@ -149,7 +236,7 @@ export function runCodingSamples(code: string, language: string) {
 
   return {
     language,
-    sandbox: "sample-only",
+    sandbox: "mock-pattern-match",
     passed: looksLikeSumSolution ? cases.length : 0,
     total: cases.length,
     results: cases.map((testCase) => ({

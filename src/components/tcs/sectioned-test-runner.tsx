@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, ChevronRight, Clock } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useTestRunnerStore } from "@/stores/test-runner-store";
 import { tcsNqtQuestions, tcsNqtPattern } from "@/lib/data/tcs-nqt";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, cn } from "@/lib/utils";
 
 export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
   const fallbackSection = tcsNqtPattern[0];
@@ -16,6 +16,7 @@ export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
   const [warningOpen, setWarningOpen] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [remaining, setRemaining] = useState(fallbackSection.timeLimitSec);
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const { setActiveSectionId, acknowledgedWarning, setAcknowledgedWarning } = useTestRunnerStore();
 
   const section = useMemo(() => tcsNqtPattern.find((item) => item.id === sectionId) ?? fallbackSection, [sectionId, fallbackSection]);
@@ -25,6 +26,7 @@ export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
   useEffect(() => {
     setActiveSectionId(section.id);
     setRemaining(section.timeLimitSec);
+    setActiveQuestionIndex(0); // Reset index on section switch
   }, [section.id, section.timeLimitSec, setActiveSectionId]);
 
   useEffect(() => {
@@ -66,50 +68,129 @@ export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
     }
   }
 
+  const activeQuestion = questions[activeQuestionIndex];
+
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-      <div className="rounded-lg border border-border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <Badge variant={section.category === "FOUNDATION" ? "success" : section.category === "ADVANCED" ? "warning" : "secondary"}>
-              {section.category}
-            </Badge>
-            <h1 className="mt-3 text-2xl font-bold">{section.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{section.instructions}</p>
+      <div className="rounded-lg border border-border bg-card p-5 flex flex-col justify-between min-h-[500px]">
+        <div>
+          {/* Header */}
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+            <div>
+              <Badge variant={section.category === "FOUNDATION" ? "success" : section.category === "ADVANCED" ? "warning" : "secondary"}>
+                {section.category}
+              </Badge>
+              <h1 className="mt-2 text-2xl font-bold">{section.name}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{section.instructions}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background px-4 py-3 text-right shrink-0">
+              <div className="flex items-center justify-end gap-2 text-sm font-semibold">
+                <Clock className="h-4 w-4 text-primary" />
+                {formatDuration(remaining)}
+              </div>
+              <div className="mt-2 w-40">
+                <Progress value={progress} />
+              </div>
+            </div>
           </div>
-          <div className="rounded-md border border-border bg-background px-4 py-3 text-right">
-            <div className="flex items-center justify-end gap-2 text-sm font-semibold">
-              <Clock className="h-4 w-4 text-primary" />
-              {formatDuration(remaining)}
+
+          {/* Question Palette / Numbers */}
+          {questions.length > 1 && (
+            <div className="mt-4 flex flex-wrap gap-2 border-b border-border pb-4">
+              {questions.map((_, idx) => {
+                const isCurrent = idx === activeQuestionIndex;
+                const isAnswered = !!answers[questions[idx].id];
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveQuestionIndex(idx)}
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded border text-xs font-semibold transition-all",
+                      isCurrent
+                        ? "border-primary bg-primary text-primary-foreground font-bold shadow-sm"
+                        : isAnswered
+                          ? "border-green-500 bg-green-500/10 text-green-700 dark:text-green-300"
+                          : "border-border bg-background hover:bg-muted text-muted-foreground"
+                    )}
+                  >
+                    Q{idx + 1}
+                  </button>
+                );
+              })}
             </div>
-            <div className="mt-2 w-40">
-              <Progress value={progress} />
-            </div>
+          )}
+
+          {/* Question Block */}
+          <div className="mt-6">
+            {!activeQuestion ? (
+              <div className="rounded-md border border-border bg-background p-8 text-center text-sm text-muted-foreground">
+                No questions configured for this section.
+              </div>
+            ) : (
+              <fieldset className="rounded-md border border-border bg-background p-5">
+                <legend className="px-2 text-sm font-semibold text-primary">
+                  Question {activeQuestionIndex + 1} of {questions.length}
+                </legend>
+                <p className="text-base font-medium leading-relaxed mt-2">{activeQuestion.questionText}</p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {activeQuestion.options?.map((option) => (
+                    <label
+                      key={option}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-all hover:bg-muted/50",
+                        answers[activeQuestion.id] === option
+                          ? "border-primary bg-primary/5 font-semibold text-primary"
+                          : "border-border bg-card"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name={activeQuestion.id}
+                        value={option}
+                        checked={answers[activeQuestion.id] === option}
+                        onChange={() => setAnswers((current) => ({ ...current, [activeQuestion.id]: option }))}
+                        className="h-4 w-4 text-primary focus:ring-primary"
+                      />
+                      <span>{option}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
           </div>
         </div>
 
-        <div className="mt-6 space-y-5">
-          {questions.map((question, index) => (
-            <fieldset key={question.id} className="rounded-md border border-border bg-background p-4">
-              <legend className="px-1 text-sm font-semibold">Q{index + 1}</legend>
-              <p className="text-sm leading-6">{question.questionText}</p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {question.options?.map((option) => (
-                  <label key={option} className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
-                    <input
-                      type="radio"
-                      name={question.id}
-                      value={option}
-                      checked={answers[question.id] === option}
-                      onChange={() => setAnswers((current) => ({ ...current, [question.id]: option }))}
-                    />
-                    {option}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          ))}
-        </div>
+        {/* Next and Previous Buttons */}
+        {questions.length > 0 && (
+          <div className="mt-8 flex items-center justify-between border-t border-border pt-4 bg-muted/5 p-4 rounded-b-lg">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveQuestionIndex((prev) => Math.max(0, prev - 1))}
+              disabled={activeQuestionIndex === 0}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous Question
+            </Button>
+
+            <span className="text-xs font-medium text-muted-foreground">
+              Q{activeQuestionIndex + 1} of {questions.length}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveQuestionIndex((prev) => Math.min(questions.length - 1, prev + 1))}
+              disabled={activeQuestionIndex === questions.length - 1}
+              className="gap-2"
+            >
+              Next Question
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <aside className="rounded-lg border border-border bg-card p-5">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BarChart3, Bookmark, Brain, Building2, Gauge, Home, LineChart, Settings, User, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AuthStatus } from "@/components/auth/auth-status";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -60,9 +61,7 @@ export function AppShell({ children, activeHref }: { children: React.ReactNode; 
               <Button asChild variant="outline" size="sm">
                 <Link href="/company-prep/tcs-nqt">TCS NQT</Link>
               </Button>
-              <Button asChild size="sm">
-                <Link href="/auth/login">Login</Link>
-              </Button>
+              <AuthStatus />
             </div>
           </div>
         </header>
