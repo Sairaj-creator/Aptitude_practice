@@ -6,14 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { type PracticeQuestion } from "@/lib/data/catalog";
+import { isDifficultyMastered } from "@/lib/mastery";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface PracticeQuizProps {
   questions: PracticeQuestion[];
   topicSlug: string;
+  onAnswerSubmitted?: (isCorrect: boolean) => void;
 }
 
-export function PracticeQuiz({ questions, topicSlug }: PracticeQuizProps) {
+export function PracticeQuiz({ questions, topicSlug, onAnswerSubmitted }: PracticeQuizProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
@@ -47,6 +49,7 @@ export function PracticeQuiz({ questions, topicSlug }: PracticeQuizProps) {
     const correct = selectedOption === question.correctAnswer;
     setIsCorrect(correct);
     setIsAnswered(true);
+    onAnswerSubmitted?.(correct);
 
     const nextStats = {
       solved: stats.solved + 1,
@@ -68,7 +71,7 @@ export function PracticeQuiz({ questions, topicSlug }: PracticeQuizProps) {
           accuracy: accuracy * 100,
           questionsSolved: nextStats.solved,
           unlocked: true,
-          mastered: accuracy >= 0.8 && nextStats.solved >= 5
+          mastered: isDifficultyMastered({ accuracy, questionsSolved: nextStats.solved })
         })
       });
       const data = await response.json();

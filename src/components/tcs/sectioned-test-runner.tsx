@@ -1,34 +1,87 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { useTestRunnerStore } from "@/stores/test-runner-store";
 import { tcsNqtQuestions, tcsNqtPattern } from "@/lib/data/tcs-nqt";
 import { formatDuration, cn } from "@/lib/utils";
+import { CodingPanel } from "@/components/tcs/coding-panel";
 
-export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
+interface SectionedTestRunnerProps {
+  attemptId?: string;
+  initialSectionId?: string;
+  initialRemainingTime?: number;
+}
+
+export function SectionedTestRunner({
+  attemptId,
+  initialSectionId,
+  initialRemainingTime
+}: SectionedTestRunnerProps) {
   const fallbackSection = tcsNqtPattern[0];
-  const [sectionId, setSectionId] = useState(fallbackSection.id);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [activeSectionId, setActiveSectionId] = useState<string>(initialSectionId || fallbackSection.id);
+  const [acknowledgedWarning, setAcknowledgedWarning] = useState<boolean>(false);
+
+  const sectionId = initialSectionId || activeSectionId || fallbackSection.id;
+
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    const saved = localStorage.getItem(`tcs-answers-${attemptId || 'local'}-${sectionId}`);
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const [warningOpen, setWarningOpen] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [remaining, setRemaining] = useState(fallbackSection.timeLimitSec);
+  const [remaining, setRemaining] = useState(() => initialRemainingTime ?? fallbackSection.timeLimitSec);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
-  const { setActiveSectionId, acknowledgedWarning, setAcknowledgedWarning } = useTestRunnerStore();
+
+  const answersRef = useRef(answers);
+  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const isFirstMountRef = useRef(true);
 
   const section = useMemo(() => tcsNqtPattern.find((item) => item.id === sectionId) ?? fallbackSection, [sectionId, fallbackSection]);
-  const questions = tcsNqtQuestions.filter((question) => question.sectionId === section.id && !question.isCoding);
-  const progress = ((section.timeLimitSec - remaining) / section.timeLimitSec) * 100;
+  
+  // Remove the !question.isCoding filter to include coding questions
+  const questions = useMemo(() => tcsNqtQuestions.filter((question) => question.sectionId === section.id), [section.id]);
+  
+  // Clamped progress calculation
+  const progress = Math.min(100, Math.max(0, ((section.timeLimitSec - remaining) / section.timeLimitSec) * 100));
 
+  // Synchronize state when initialSectionId changes
   useEffect(() => {
-    setActiveSectionId(section.id);
-    setRemaining(section.timeLimitSec);
-    setActiveQuestionIndex(0); // Reset index on section switch
-  }, [section.id, section.timeLimitSec, setActiveSectionId]);
+    if (initialSectionId) {
+      setActiveSectionId(initialSectionId);
+    }
+  }, [initialSectionId]);
 
+  // Keep ref synced with latest answers and save to localStorage
+  useEffect(() => {
+    answersRef.current = answers;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`tcs-answers-${attemptId || 'local'}-${sectionId}`, JSON.stringify(answers));
+    }
+  }, [answers, attemptId, sectionId]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => clearTimeout(timeoutRef.current);
+  }, []);
+
+  // Reset section state (remaining time, active question) when section changes
+  useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      if (initialRemainingTime !== undefined) {
+        return;
+      }
+    }
+    setRemaining(section.timeLimitSec);
+    setActiveQuestionIndex(0);
+  }, [section.id, section.timeLimitSec, initialRemainingTime]);
+
+  // Timer effect with proper cleanup - only depends on section.id
   useEffect(() => {
     const timer = window.setInterval(() => {
       setRemaining((value) => {
@@ -42,29 +95,54 @@ export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [section.id]);
+  }, [section.id]); // submit function reference is stable because it relies on answersRef
 
   async function submit(auto = false) {
+    const currentAnswers = answersRef.current;
+
     if (!attemptId) {
       const next = tcsNqtPattern.find((item) => item.order === section.order + 1);
       setResult(auto ? "Auto-submitted local preview" : "Submitted local preview");
-      if (next) setTimeout(() => setSectionId(next.id), 900);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(`tcs-answers-local-${section.id}`);
+      }
+      if (next) {
+        timeoutRef.current = setTimeout(() => {
+          setActiveSectionId(next.id);
+          setAnswers({}); // Complete state reset for local mode
+          setAcknowledgedWarning(false);
+          setActiveQuestionIndex(0);
+        }, 900);
+      }
       return;
     }
 
-    const response = await fetch(`/api/tcs-nqt/attempt/${attemptId}/section/${section.id}/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers, timeTakenSec: section.timeLimitSec - remaining })
-    });
-    const data = await response.json();
-    setResult(data.nextSection ? `${section.name} complete. ${data.nextSection.name} begins next.` : "TCS NQT mock completed.");
-    if (data.nextSection) {
-      setTimeout(() => {
-        setSectionId(data.nextSection.id);
-        setAnswers({});
-        setAcknowledgedWarning(false);
-      }, 1200);
+    try {
+      const response = await fetch(`/api/tcs-nqt/attempt/${attemptId}/section/${section.id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: currentAnswers, timeTakenSec: section.timeLimitSec - remaining })
+      });
+
+      if (!response.ok) throw new Error("Submission failed");
+
+      const data = await response.json();
+      setResult(data.nextSection ? `${section.name} complete. ${data.nextSection.name} begins next.` : "TCS NQT mock completed.");
+      
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(`tcs-answers-${attemptId}-${section.id}`);
+      }
+
+      if (data.nextSection) {
+        timeoutRef.current = setTimeout(() => {
+          setActiveSectionId(data.nextSection.id);
+          setAnswers({});
+          setAcknowledgedWarning(false);
+          setActiveQuestionIndex(0);
+        }, 1200);
+      }
+    } catch (error) {
+      setResult("Submission failed. Please check your connection and try again.");
     }
   }
 
@@ -127,6 +205,12 @@ export function SectionedTestRunner({ attemptId }: { attemptId?: string }) {
               <div className="rounded-md border border-border bg-background p-8 text-center text-sm text-muted-foreground">
                 No questions configured for this section.
               </div>
+            ) : activeQuestion.isCoding ? (
+              <CodingPanel 
+                question={activeQuestion} 
+                attemptId={attemptId}
+                onCodeSubmit={(code) => setAnswers(current => ({ ...current, [activeQuestion.id]: code }))}
+              />
             ) : (
               <fieldset className="rounded-md border border-border bg-background p-5">
                 <legend className="px-2 text-sm font-semibold text-primary">

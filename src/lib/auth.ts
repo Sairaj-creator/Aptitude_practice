@@ -10,8 +10,7 @@ export interface AuthUser {
 const SESSION_COOKIE_NAME = "placement_prep_session";
 const MOCK_USERS_KEY = "placement_prep_users";
 
-// Helper to set cookie
-function setSessionCookie(user: AuthUser | null) {
+function postAuthSetCookie(user: AuthUser | null) {
   if (typeof document === "undefined") return;
   if (user) {
     document.cookie = `${SESSION_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=604800; SameSite=Lax`;
@@ -20,7 +19,6 @@ function setSessionCookie(user: AuthUser | null) {
   }
 }
 
-// Helper to read cookie on the client side
 export function getSessionCookie(): AuthUser | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp(`(^| )${SESSION_COOKIE_NAME}=([^;]+)`));
@@ -70,20 +68,12 @@ export async function signUp(email: string, name: string, password?: string): Pr
       const { data, error } = await supabase.auth.signUp({
         email,
         password: password || "placeholder123",
-        options: {
-          data: { name }
-        }
+        options: { data: { name } }
       });
       if (error) return { user: null, error: error.message };
       if (data.user) {
-        const authUser: AuthUser = {
-          id: data.user.id,
-          email: data.user.email ?? "",
-          name,
-          isMock: false
-        };
-        // Also set mock session cookie for parity
-        setSessionCookie(authUser);
+        const authUser: AuthUser = { id: data.user.id, email: data.user.email ?? "", name, isMock: false };
+        postAuthSetCookie(authUser);
         return { user: authUser };
       }
     }
@@ -92,28 +82,17 @@ export async function signUp(email: string, name: string, password?: string): Pr
   // Fallback: Local Storage Mock
   if (typeof window === "undefined") return { user: null, error: "Window is undefined" };
 
-  const usersString = localStorage.getItem(MOCK_USERS_KEY) || "[]";
-  const users: Array<{ email: string; name: string; id: string }> = JSON.parse(usersString);
-
+  const users: Array<{ email: string; name: string; id: string }> = JSON.parse(localStorage.getItem(MOCK_USERS_KEY) || "[]");
   if (users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
     return { user: null, error: "User already exists with this email" };
   }
 
-  const newMockUser = {
-    id: `mock-${Math.random().toString(36).substr(2, 9)}`,
-    email,
-    name
-  };
-
+  const newMockUser = { id: `mock-${Math.random().toString(36).substr(2, 9)}`, email, name };
   users.push(newMockUser);
   localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
 
-  const authUser: AuthUser = {
-    ...newMockUser,
-    isMock: true
-  };
-  setSessionCookie(authUser);
-
+  const authUser: AuthUser = { ...newMockUser, isMock: true };
+  postAuthSetCookie(authUser);
   return { user: authUser };
 }
 
@@ -133,7 +112,7 @@ export async function signIn(email: string, password?: string): Promise<{ user: 
           name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || undefined,
           isMock: false
         };
-        setSessionCookie(authUser);
+        postAuthSetCookie(authUser);
         return { user: authUser };
       }
     }
@@ -142,23 +121,14 @@ export async function signIn(email: string, password?: string): Promise<{ user: 
   // Fallback: Local Storage Mock
   if (typeof window === "undefined") return { user: null, error: "Window is undefined" };
 
-  const usersString = localStorage.getItem(MOCK_USERS_KEY) || "[]";
-  const users: Array<{ email: string; name: string; id: string }> = JSON.parse(usersString);
-
+  const users: Array<{ email: string; name: string; id: string }> = JSON.parse(localStorage.getItem(MOCK_USERS_KEY) || "[]");
   const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
   if (!found) {
-    // For convenience in prototyping, auto-register new mock users if they don't exist
     return signUp(email, email.split("@")[0]);
   }
 
-  const authUser: AuthUser = {
-    id: found.id,
-    email: found.email,
-    name: found.name,
-    isMock: true
-  };
-  setSessionCookie(authUser);
-
+  const authUser: AuthUser = { id: found.id, email: found.email, name: found.name, isMock: true };
+  postAuthSetCookie(authUser);
   return { user: authUser };
 }
 
@@ -169,7 +139,7 @@ export async function signOut(): Promise<void> {
       await supabase.auth.signOut();
     }
   }
-  setSessionCookie(null);
+  postAuthSetCookie(null);
 }
 
 export async function forgotPassword(email: string): Promise<{ success: boolean; error?: string }> {

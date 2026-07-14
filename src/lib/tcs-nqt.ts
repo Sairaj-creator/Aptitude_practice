@@ -226,24 +226,17 @@ export async function runCodingSamples(code: string, language: string) {
     };
   }
 
-  // Fallback pattern matching for other languages
-  const normalized = code.toLowerCase();
-  const looksLikeSumSolution =
-    normalized.includes("n * (n + 1)") ||
-    normalized.includes("n*(n+1)") ||
-    normalized.includes("sum") ||
-    normalized.includes("for");
-
+  // Non-Python languages are not supported in local sandbox
   return {
     language,
-    sandbox: "mock-pattern-match",
-    passed: looksLikeSumSolution ? cases.length : 0,
+    sandbox: "unsupported",
+    passed: 0,
     total: cases.length,
     results: cases.map((testCase) => ({
       input: testCase.input,
       expectedOutput: testCase.expectedOutput,
-      actualOutput: looksLikeSumSolution ? testCase.expectedOutput : "",
-      passed: looksLikeSumSolution
+      actualOutput: "Language not supported in local sandbox. Use Python.",
+      passed: false
     }))
   };
 }

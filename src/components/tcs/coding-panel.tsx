@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
 import { javascript } from "@codemirror/lang-javascript";
@@ -15,10 +15,41 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false }
 
 type Language = "c" | "cpp" | "java" | "python";
 
-export function CodingPanel({ attemptId }: { attemptId?: string }) {
-  const question = tcsNqtQuestions.find((item) => item.isCoding);
+interface CodingPanelProps {
+  attemptId?: string;
+  question?: typeof tcsNqtQuestions[number];
+  onCodeSubmit?: (code: string) => void;
+}
+
+export function CodingPanel({ attemptId, question: propQuestion, onCodeSubmit }: CodingPanelProps) {
+  const fallbackQuestion = useMemo(() => tcsNqtQuestions.find((item) => item.isCoding), []);
+  const question = propQuestion || fallbackQuestion;
+
   const [language, setLanguage] = useState<Language>("python");
-  const [code, setCode] = useState(question?.starterCode ?? "");
+
+  const initialCode = useMemo(() => {
+    if (typeof window !== "undefined" && question?.id) {
+      const key = `tcs-answers-${attemptId || 'local'}-${question.sectionId}`;
+      const savedAnswers = localStorage.getItem(key);
+      if (savedAnswers) {
+        try {
+          const parsed = JSON.parse(savedAnswers);
+          if (parsed[question.id]) {
+            return parsed[question.id];
+          }
+        } catch (e) {
+          console.error("Failed to parse saved answers", e);
+        }
+      }
+    }
+    return question?.starterCode ?? "";
+  }, [question, attemptId]);
+
+  const [code, setCode] = useState(initialCode);
+
+  useEffect(() => {
+    setCode(initialCode);
+  }, [initialCode]);
   const [output, setOutput] = useState<string>("No run yet");
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +90,9 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
     try {
       if (!attemptId) {
         setOutput("Submitted local preview (No active attempt)");
+        if (onCodeSubmit) {
+          onCodeSubmit(code);
+        }
         setSubmitting(false);
         return;
       }
@@ -72,6 +106,9 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
         setOutput(`Submission Error: ${data.error}`);
       } else {
         setOutput(`Submitted! ${data.passed}/${data.total} sample cases passed`);
+        if (onCodeSubmit) {
+          onCodeSubmit(code);
+        }
       }
     } catch (err) {
       setOutput("Failed to submit code");
@@ -100,7 +137,18 @@ export function CodingPanel({ attemptId }: { attemptId?: string }) {
           </select>
         </div>
         <div className="mt-5 overflow-hidden rounded-md border border-border">
-          <CodeMirror value={code} height="420px" extensions={extensions} onChange={setCode} basicSetup={{ lineNumbers: true }} />
+          <CodeMirror
+            value={code}
+            height="420px"
+            extensions={extensions}
+            onChange={(newCode) => {
+              setCode(newCode);
+              if (onCodeSubmit) {
+                onCodeSubmit(newCode);
+              }
+            }}
+            basicSetup={{ lineNumbers: true }}
+          />
         </div>
         <div className="mt-4 flex gap-2">
           <Button onClick={run} disabled={running || submitting}>
