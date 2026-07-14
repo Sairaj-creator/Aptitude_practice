@@ -10,17 +10,19 @@ import { getServerUser } from "@/lib/auth-server";
 async function getDashboardStats(userId: string) {
   try {
     const [progressRecords, answers, attempts] = await Promise.all([
-      prisma.progress.findMany({ where: { userId } }),
+      prisma.progress.findMany({
+        where: { userId },
+        include: { topic: true }
+      }),
       prisma.answer.findMany({
         where: { attempt: { userId } },
         orderBy: { createdAt: "desc" },
         take: 500
       }),
       prisma.testAttempt.findMany({
-        where: { userId },
+        where: { userId, status: "COMPLETED" },
         orderBy: { createdAt: "desc" },
-        take: 30,
-        select: { createdAt: true }
+        take: 30
       })
     ]);
 
@@ -32,18 +34,25 @@ async function getDashboardStats(userId: string) {
       ? Math.round(answers.reduce((sum, a) => sum + a.timeTakenSec, 0) / totalSolved)
       : 0;
 
-    // Streak: consecutive days with practice
-    const practiceDays = new Set(
-      attempts.map((a) => a.createdAt.toISOString().split("T")[0])
-    );
+    // Streak calculation based on completed test attempts & answer logs
+    const activeDates = new Set<string>();
+    attempts.forEach((a) => {
+      if (a.completedAt) activeDates.add(a.completedAt.toISOString().split("T")[0]);
+    });
+    answers.forEach((ans) => {
+      activeDates.add(ans.createdAt.toISOString().split("T")[0]);
+    });
+
     let streak = 0;
     const today = new Date();
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      if (practiceDays.has(d.toISOString().split("T")[0])) {
+      const dateStr = d.toISOString().split("T")[0];
+      if (activeDates.has(dateStr)) {
         streak++;
-      } else {
+      } else if (i > 0) {
+        // If they haven't practiced today, streak could still be alive if they practiced yesterday
         break;
       }
     }
@@ -63,8 +72,44 @@ async function getDashboardStats(userId: string) {
       }
     }
 
-    return { overallAccuracy, masteredCount, avgTimeSec, streak, totalSolved, difficultyMap };
-  } catch {
+    // Real DB-backed chart data
+    const topicData = progressRecords
+      .filter((p) => p.questionsSolved > 0)
+      .map((p) => ({
+        topic: p.topic.name.substring(0, 10),
+        accuracy: Math.round(p.accuracy * 100)
+      }))
+      .slice(0, 10);
+
+    const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const trendMap: Record<string, { total: number; count: number }> = {};
+    for (const a of attempts) {
+      const date = a.completedAt || a.createdAt;
+      const dayName = weekdays[new Date(date).getDay()];
+      if (!trendMap[dayName]) {
+        trendMap[dayName] = { total: 0, count: 0 };
+      }
+      trendMap[dayName].total += a.score;
+      trendMap[dayName].count++;
+    }
+
+    const trendData = Object.entries(trendMap).map(([day, data]) => ({
+      day,
+      score: Math.round(data.total / data.count)
+    }));
+
+    return {
+      overallAccuracy,
+      masteredCount,
+      avgTimeSec,
+      streak,
+      totalSolved,
+      difficultyMap,
+      topicData,
+      trendData
+    };
+  } catch (error) {
+    console.error("Failed to query dashboard stats from DB:", error);
     return null;
   }
 }
@@ -73,17 +118,17 @@ export default async function DashboardPage() {
   const user = await getServerUser();
   const stats = user ? await getDashboardStats(user.id) : null;
 
-  const accuracy = stats?.overallAccuracy ?? 84;
-  const mastered = stats?.masteredCount ?? 18;
-  const avgTime = stats?.avgTimeSec ?? 47;
-  const streak = stats?.streak ?? 12;
-  const totalSolved = stats?.totalSolved ?? 240;
+  const accuracy = stats?.overallAccuracy ?? 0;
+  const mastered = stats?.masteredCount ?? 0;
+  const avgTime = stats?.avgTimeSec ?? 0;
+  const streak = stats?.streak ?? 0;
+  const totalSolved = stats?.totalSolved ?? 0;
 
   const difficultyData = stats?.difficultyMap ?? {
-    EASY: { solved: 100, correct: 100 },
-    MEDIUM: { solved: 82, correct: 67 },
-    HARD: { solved: 43, correct: 19 },
-    EXPERT: { solved: 18, correct: 3 }
+    EASY: { solved: 0, correct: 0 },
+    MEDIUM: { solved: 0, correct: 0 },
+    HARD: { solved: 0, correct: 0 },
+    EXPERT: { solved: 0, correct: 0 }
   };
 
   return (
@@ -96,12 +141,17 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={Target} label="Overall Accuracy" value={`${accuracy}%`} detail={stats ? `${totalSolved} questions answered` : "Up 7% this week"} />
+          <StatCard icon={Target} label="Overall Accuracy" value={`${accuracy}%`} detail={`${totalSolved} questions answered`} />
           <StatCard icon={Brain} label="Topics Mastered" value={String(mastered)} detail="Across quant, reasoning, verbal" />
           <StatCard icon={Clock} label="Avg Time" value={`${avgTime}s`} detail="Per practice question" />
           <StatCard icon={Activity} label="Practice Streak" value={`${streak}d`} detail={`${totalSolved} questions solved`} />
         </div>
-        <PracticeOverviewChart />
+
+        <PracticeOverviewChart
+          topicData={stats?.topicData ?? []}
+          trendData={stats?.trendData ?? []}
+        />
+
         <Card>
           <CardHeader>
             <CardTitle>Difficulty Distribution</CardTitle>
@@ -117,7 +167,7 @@ export default async function DashboardPage() {
                     <span className="text-muted-foreground">{pct}%</span>
                   </div>
                   <Progress value={pct} />
-                  {stats && <div className="mt-2 text-xs text-muted-foreground">{d.solved} solved</div>}
+                  <div className="mt-2 text-xs text-muted-foreground">{d.solved} solved</div>
                 </div>
               );
             })}

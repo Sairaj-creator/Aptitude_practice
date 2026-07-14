@@ -9,7 +9,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 async function getAnalyticsData(userId: string) {
   try {
-    const [progressRecords, answers] = await Promise.all([
+    const [progressRecords, answers, attempts] = await Promise.all([
       prisma.progress.findMany({
         where: { userId },
         include: { topic: { include: { subject: true } } }
@@ -18,6 +18,11 @@ async function getAnalyticsData(userId: string) {
         where: { attempt: { userId } },
         orderBy: { createdAt: "asc" },
         take: 1000
+      }),
+      prisma.testAttempt.findMany({
+        where: { userId, status: "COMPLETED" },
+        orderBy: { createdAt: "desc" },
+        take: 30
       })
     ]);
 
@@ -58,7 +63,41 @@ async function getAnalyticsData(userId: string) {
       }
     }
 
-    return { weakTopics, strongTopics, avgTime, difficultyMap, totalAnswers: answers.length };
+    // Chart data
+    const topicData = progressRecords
+      .filter((p) => p.questionsSolved > 0)
+      .map((p) => ({
+        topic: p.topic.name.substring(0, 10),
+        accuracy: Math.round(p.accuracy * 100)
+      }))
+      .slice(0, 10);
+
+    const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const trendMap: Record<string, { total: number; count: number }> = {};
+    for (const a of attempts) {
+      const date = a.completedAt || a.createdAt;
+      const dayName = weekdays[new Date(date).getDay()];
+      if (!trendMap[dayName]) {
+        trendMap[dayName] = { total: 0, count: 0 };
+      }
+      trendMap[dayName].total += a.score;
+      trendMap[dayName].count++;
+    }
+
+    const trendData = Object.entries(trendMap).map(([day, data]) => ({
+      day,
+      score: Math.round(data.total / data.count)
+    }));
+
+    return {
+      weakTopics,
+      strongTopics,
+      avgTime,
+      difficultyMap,
+      totalAnswers: answers.length,
+      topicData,
+      trendData
+    };
   } catch {
     return null;
   }
@@ -68,17 +107,25 @@ export default async function AnalyticsPage() {
   const user = await getServerUser();
   const data = user ? await getAnalyticsData(user.id) : null;
 
+  const weakTopics = data?.weakTopics ?? [];
+  const strongTopics = data?.strongTopics ?? [];
+  const totalAnswers = data?.totalAnswers ?? 0;
+  const avgTime = data?.avgTime ?? 0;
+
   return (
     <AppShell activeHref="/analytics">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-normal">Analytics</h1>
           <p className="mt-1 text-muted-foreground">
-            {data ? `${data.totalAnswers} questions analyzed · Avg time ${data.avgTime}s per question` : "Accuracy, time, trends, and difficulty distribution."}
+            {data ? `${totalAnswers} questions analyzed · Avg time ${avgTime}s per question` : "Accuracy, time, trends, and difficulty distribution."}
           </p>
         </div>
 
-        <PracticeOverviewChart />
+        <PracticeOverviewChart
+          topicData={data?.topicData ?? []}
+          trendData={data?.trendData ?? []}
+        />
 
         <div className="grid gap-4 md:grid-cols-2">
           {/* Weak Topics */}
@@ -89,18 +136,20 @@ export default async function AnalyticsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {data?.weakTopics.length
-                ? data.weakTopics.map((t) => (
-                    <div key={t.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium">{t.name}</span>
-                        <span className="text-destructive">{Math.round(t.accuracy * 100)}%</span>
-                      </div>
-                      <Progress value={Math.round(t.accuracy * 100)} className="h-1.5" />
-                      <div className="text-xs text-muted-foreground">{t.subject} · {t.solved} solved</div>
+              {weakTopics.length > 0 ? (
+                weakTopics.map((t) => (
+                  <div key={t.name} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{t.name}</span>
+                      <span className="text-destructive">{Math.round(t.accuracy * 100)}%</span>
                     </div>
-                  ))
-                : <p className="text-sm text-muted-foreground">No weak topics yet — keep practicing!</p>}
+                    <Progress value={Math.round(t.accuracy * 100)} className="h-1.5" />
+                    <div className="text-xs text-muted-foreground">{t.subject} · {t.solved} solved</div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No weak topics yet — keep practicing!</p>
+              )}
             </CardContent>
           </Card>
 
@@ -112,20 +161,22 @@ export default async function AnalyticsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {data?.strongTopics.length
-                ? data.strongTopics.map((t) => (
-                    <div key={t.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium">{t.name}</span>
-                        <div className="flex items-center gap-1">
-                          {t.mastered && <Badge variant="success" className="text-xs">Mastered</Badge>}
-                          <span className="text-emerald-600">{Math.round(t.accuracy * 100)}%</span>
-                        </div>
+              {strongTopics.length > 0 ? (
+                strongTopics.map((t) => (
+                  <div key={t.name} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{t.name}</span>
+                      <div className="flex items-center gap-1">
+                        {t.mastered && <Badge variant="success" className="text-xs">Mastered</Badge>}
+                        <span className="text-emerald-600">{Math.round(t.accuracy * 100)}%</span>
                       </div>
-                      <Progress value={Math.round(t.accuracy * 100)} className="h-1.5" />
                     </div>
-                  ))
-                : <p className="text-sm text-muted-foreground">Complete 10+ questions in a topic to appear here.</p>}
+                    <Progress value={Math.round(t.accuracy * 100)} className="h-1.5" />
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Complete 10+ questions in a topic to appear here.</p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -141,6 +192,7 @@ export default async function AnalyticsPage() {
             {(["EASY", "MEDIUM", "HARD", "EXPERT"] as const).map((level) => {
               const d = data?.difficultyMap[level];
               const pct = d ? Math.round(d.accuracy * 100) : 0;
+              const solved = d ? d.solved : 0;
               return (
                 <div key={level} className="rounded-md border border-border p-4">
                   <div className="mb-2 flex items-center justify-between text-sm">
@@ -148,7 +200,7 @@ export default async function AnalyticsPage() {
                     <span className="text-muted-foreground">{pct}%</span>
                   </div>
                   <Progress value={pct} />
-                  {d && <div className="mt-2 text-xs text-muted-foreground">{d.solved} solved</div>}
+                  <div className="mt-2 text-xs text-muted-foreground">{solved} solved</div>
                 </div>
               );
             })}
