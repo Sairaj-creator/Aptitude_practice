@@ -1,74 +1,77 @@
+/**
+ * TCS NQT attempt store — persists exclusively to Prisma (PostgreSQL).
+ *
+ * The previous version used an in-memory Map as a "cache" which caused
+ * intermittent failures on Vercel (serverless) because each Lambda invocation
+ * is an independent process with its own empty Map. All state is now read
+ * from and written to the database on every request.
+ */
 import { createTcsAttempt, submitTcsSection, type TcsAttemptState, type SectionResult } from "@/lib/tcs-nqt";
 import type { TcsNqtVariant, AttemptStatus } from "@/lib/data/tcs-nqt";
 import { prisma } from "@/lib/prisma";
 
-const attempts = new Map<string, TcsAttemptState>();
-
 export async function startStoredAttempt(userId: string, variant: TcsNqtVariant) {
   const result = createTcsAttempt(userId, variant);
-  
-  try {
-    // 1. Ensure user exists in Prisma
-    await prisma.user.upsert({
-      where: { id: userId },
-      update: {},
-      create: {
-        id: userId,
-        email: userId.includes("@") ? userId : `${userId}@placeholder.com`,
-        name: userId.split("-")[0]
-      }
-    });
 
-    // 2. Create attempt in Prisma
-    await prisma.tcsNqtAttempt.create({
-      data: {
-        id: result.attempt.id,
-        userId: userId,
-        variant: variant,
-        startedAt: new Date(result.attempt.startedAt),
-        currentOrder: result.attempt.currentSectionIndex + 1,
-        sectionResults: JSON.stringify(result.attempt.sectionResults),
-        status: "IN_PROGRESS"
-      }
-    });
-  } catch (error) {
-    console.warn("Prisma failed to start attempt, falling back to memory Map:", error);
-  }
+  // Ensure user row exists
+  await prisma.user.upsert({
+    where: { id: userId },
+    update: {},
+    create: {
+      id: userId,
+      email: userId.includes("@") ? userId : `${userId}@placeholder.com`,
+      name: userId.split("-")[0]
+    }
+  });
 
-  attempts.set(result.attempt.id, result.attempt);
+  await prisma.tcsNqtAttempt.create({
+    data: {
+      id: result.attempt.id,
+      userId,
+      variant,
+      startedAt: new Date(result.attempt.startedAt),
+      currentOrder: result.attempt.currentSectionIndex + 1,
+      sectionResults: JSON.stringify(result.attempt.sectionResults),
+      status: "IN_PROGRESS"
+    }
+  });
+
   return result;
 }
 
+function dbRowToState(attempt: {
+  id: string;
+  userId: string;
+  variant: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  currentOrder: number;
+  sectionResults: unknown;
+  overallScore: number | null;
+  status: string;
+}): TcsAttemptState {
+  return {
+    id: attempt.id,
+    userId: attempt.userId,
+    variant: attempt.variant as TcsNqtVariant,
+    startedAt: attempt.startedAt.toISOString(),
+    completedAt: attempt.completedAt?.toISOString(),
+    currentSectionIndex: attempt.currentOrder - 1,
+    sectionResults: JSON.parse(attempt.sectionResults as string) as SectionResult[],
+    overallScore: attempt.overallScore ?? undefined,
+    status: attempt.status as AttemptStatus
+  };
+}
+
 export async function getStoredAttempt(id: string): Promise<TcsAttemptState | null> {
-  if (attempts.has(id)) {
-    return attempts.get(id) ?? null;
-  }
-
   try {
-    const attempt = await prisma.tcsNqtAttempt.findUnique({
-      where: { id }
-    });
-
-    if (attempt) {
-      const state: TcsAttemptState = {
-        id: attempt.id,
-        userId: attempt.userId,
-        variant: attempt.variant as TcsNqtVariant,
-        startedAt: attempt.startedAt.toISOString(),
-        completedAt: attempt.completedAt?.toISOString(),
-        currentSectionIndex: attempt.currentOrder - 1,
-        sectionResults: JSON.parse(attempt.sectionResults as string) as SectionResult[],
-        overallScore: attempt.overallScore ?? undefined,
-        status: attempt.status as AttemptStatus
-      };
-      attempts.set(id, state);
-      return state;
-    }
+    const attempt = await prisma.tcsNqtAttempt.findUnique({ where: { id } });
+    if (!attempt) return null;
+    return dbRowToState(attempt);
   } catch (error) {
-    console.warn("Prisma failed to get attempt:", error);
+    console.warn("[tcs-nqt-store] Failed to get attempt:", error);
+    return null;
   }
-
-  return null;
 }
 
 export async function submitStoredSection(
@@ -78,55 +81,34 @@ export async function submitStoredSection(
   timeTakenSec: number
 ) {
   const attempt = await getStoredAttempt(id);
-  if (!attempt) {
-    throw new Error("Attempt not found");
-  }
+  if (!attempt) throw new Error("Attempt not found");
 
   const result = submitTcsSection(attempt, sectionId, answers, timeTakenSec);
-  
-  try {
-    await prisma.tcsNqtAttempt.update({
-      where: { id },
-      data: {
-        currentOrder: result.attempt.currentSectionIndex + 1,
-        sectionResults: JSON.stringify(result.attempt.sectionResults),
-        overallScore: result.attempt.overallScore ?? null,
-        status: result.attempt.status as AttemptStatus,
-        completedAt: result.attempt.completedAt ? new Date(result.attempt.completedAt) : null
-      }
-    });
-  } catch (error) {
-    console.warn("Prisma failed to update attempt, falling back to memory:", error);
-  }
 
-  attempts.set(id, result.attempt);
+  await prisma.tcsNqtAttempt.update({
+    where: { id },
+    data: {
+      currentOrder: result.attempt.currentSectionIndex + 1,
+      sectionResults: JSON.stringify(result.attempt.sectionResults),
+      overallScore: result.attempt.overallScore ?? null,
+      status: result.attempt.status as AttemptStatus,
+      completedAt: result.attempt.completedAt ? new Date(result.attempt.completedAt) : null
+    }
+  });
+
   return result;
 }
 
-export async function listStoredAttempts() {
+/** List all attempts for a specific user (filtered — never returns all users' data). */
+export async function listStoredAttempts(userId: string) {
   try {
     const dbAttempts = await prisma.tcsNqtAttempt.findMany({
+      where: { userId },
       orderBy: { startedAt: "desc" }
     });
-    const mapped = dbAttempts.map((attempt) => ({
-      id: attempt.id,
-      userId: attempt.userId,
-      variant: attempt.variant as TcsNqtVariant,
-      startedAt: attempt.startedAt.toISOString(),
-      completedAt: attempt.completedAt?.toISOString(),
-      currentSectionIndex: attempt.currentOrder - 1,
-      sectionResults: JSON.parse(attempt.sectionResults as string) as SectionResult[],
-      overallScore: attempt.overallScore ?? undefined,
-      status: attempt.status as AttemptStatus
-    }));
-
-    for (const item of mapped) {
-      attempts.set(item.id, item);
-    }
-    return mapped;
+    return dbAttempts.map(dbRowToState);
   } catch (error) {
-    console.warn("Prisma failed to list attempts, falling back to memory:", error);
+    console.warn("[tcs-nqt-store] Failed to list attempts:", error);
+    return [];
   }
-
-  return Array.from(attempts.values());
 }

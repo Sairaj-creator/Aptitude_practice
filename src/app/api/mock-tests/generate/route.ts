@@ -16,13 +16,12 @@ export async function POST(request: Request) {
       create: { id: user.id, email: user.email, name: user.name || user.email.split("@")[0] }
     });
 
-    // 2. Fetch up to 20 random questions from DB
-    const questions = await prisma.question.findMany({
-      take: 20,
+    // 2. Fetch all question IDs from DB and pick up to 20 random ones
+    const allQuestions = await prisma.question.findMany({
       select: { id: true }
     });
 
-    if (questions.length === 0) {
+    if (allQuestions.length === 0) {
       // If DB is completely empty (no questions generated/seeded yet),
       // we'll return a redirect with a query param or redirect to subjects
       // to let the user practice and auto-generate questions first.
@@ -30,6 +29,11 @@ export async function POST(request: Request) {
       url.searchParams.set("error", "No questions available. Please practice a topic first to generate questions.");
       return NextResponse.redirect(url, { status: 303 });
     }
+
+    // Shuffle in memory and take 20
+    const questions = [...allQuestions]
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 20);
 
     // 3. Create the test
     const test = await prisma.test.create({

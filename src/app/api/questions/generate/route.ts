@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerUser } from "@/lib/auth-server";
 import { generateQuestionsBatch, questionHash } from "@/lib/question-generation";
 import { Difficulty } from "@prisma/client";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const MIN_POOL_SIZE = 25;
 
@@ -10,6 +11,15 @@ export async function POST(request: Request) {
   try {
     const user = await getServerUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // Rate limit: 10 generation calls per 5 minutes (protects the paid Groq API)
+    const rl = checkRateLimit(`question-gen:${user.id}`, { limit: 10, windowMs: 5 * 60_000 });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Try again in ${Math.ceil(rl.retryAfterMs / 1000)}s.` },
+        { status: 429 }
+      );
+    }
 
     const { topicSlug, difficulty, count = 10 } = await request.json() as {
       topicSlug: string;

@@ -261,7 +261,7 @@ model AIQuestionGenerationLog {
   generated    Int
   accepted     Int
   rejected     Int
-  provider     String   @default("gemini-flash")
+  provider     String   @default("groq-llama3-8b-8192")
   createdAt    DateTime @default(now())
 
   @@index([topicId, difficulty, createdAt])

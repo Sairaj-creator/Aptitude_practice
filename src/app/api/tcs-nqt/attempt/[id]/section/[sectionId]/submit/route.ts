@@ -4,6 +4,11 @@ import { tcsSectionSubmissionSchema } from "@/lib/validation";
 import { getServerUser } from "@/lib/auth-server";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string; sectionId: string }> }) {
+  const user = await getServerUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id, sectionId } = await context.params;
   const body = await request.json();
   const parsed = tcsSectionSubmissionSchema.safeParse(body);

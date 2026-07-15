@@ -7,30 +7,7 @@ export interface AuthUser {
   isMock?: boolean;
 }
 
-const SESSION_COOKIE_NAME = "placement_prep_session";
 const MOCK_USERS_KEY = "placement_prep_users";
-
-function postAuthSetCookie(user: AuthUser | null) {
-  if (typeof document === "undefined") return;
-  if (user) {
-    document.cookie = `${SESSION_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=604800; SameSite=Lax`;
-  } else {
-    document.cookie = `${SESSION_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-  }
-}
-
-export function getSessionCookie(): AuthUser | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp(`(^| )${SESSION_COOKIE_NAME}=([^;]+)`));
-  if (match) {
-    try {
-      return JSON.parse(decodeURIComponent(match[2])) as AuthUser;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
 
 export function isSupabaseEnabled(): boolean {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -43,6 +20,29 @@ export function isSupabaseEnabled(): boolean {
   );
 }
 
+/**
+ * Set the session by calling the secure /api/auth/session endpoint.
+ * The endpoint encrypts the user and sets an httpOnly cookie — the client
+ * never handles the raw session value.
+ */
+async function postAuthSetSession(user: AuthUser | null): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (user) {
+    await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user })
+    });
+  } else {
+    await fetch("/api/auth/session", { method: "DELETE" });
+  }
+}
+
+/**
+ * Client-side session check.
+ * - With Supabase: asks the Supabase browser client (which reads the Supabase cookie).
+ * - Mock Mode: asks the /api/auth/session endpoint to decrypt the server-side cookie.
+ */
 export async function getCurrentUser(): Promise<AuthUser | null> {
   if (isSupabaseEnabled()) {
     const supabase = createSupabaseBrowserClient();
@@ -57,8 +57,18 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
         };
       }
     }
+    return null;
   }
-  return getSessionCookie();
+
+  // Mock Mode: fetch from the secure session API
+  try {
+    const res = await fetch("/api/auth/session");
+    if (!res.ok) return null;
+    const data = await res.json() as { user: AuthUser | null };
+    return data.user;
+  } catch {
+    return null;
+  }
 }
 
 export async function signUp(email: string, name: string, password?: string): Promise<{ user: AuthUser | null; error?: string }> {
@@ -73,7 +83,7 @@ export async function signUp(email: string, name: string, password?: string): Pr
       if (error) return { user: null, error: error.message };
       if (data.user) {
         const authUser: AuthUser = { id: data.user.id, email: data.user.email ?? "", name, isMock: false };
-        postAuthSetCookie(authUser);
+        await postAuthSetSession(authUser);
         return { user: authUser };
       }
     }
@@ -92,7 +102,7 @@ export async function signUp(email: string, name: string, password?: string): Pr
   localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
 
   const authUser: AuthUser = { ...newMockUser, isMock: true };
-  postAuthSetCookie(authUser);
+  await postAuthSetSession(authUser);
   return { user: authUser };
 }
 
@@ -112,7 +122,7 @@ export async function signIn(email: string, password?: string): Promise<{ user: 
           name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || undefined,
           isMock: false
         };
-        postAuthSetCookie(authUser);
+        await postAuthSetSession(authUser);
         return { user: authUser };
       }
     }
@@ -124,11 +134,12 @@ export async function signIn(email: string, password?: string): Promise<{ user: 
   const users: Array<{ email: string; name: string; id: string }> = JSON.parse(localStorage.getItem(MOCK_USERS_KEY) || "[]");
   const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
   if (!found) {
-    return signUp(email, email.split("@")[0]);
+    // Return explicit error — do NOT silently create an account for a mistyped email
+    return { user: null, error: "No account found with that email. Please sign up first." };
   }
 
   const authUser: AuthUser = { id: found.id, email: found.email, name: found.name, isMock: true };
-  postAuthSetCookie(authUser);
+  await postAuthSetSession(authUser);
   return { user: authUser };
 }
 
@@ -139,7 +150,7 @@ export async function signOut(): Promise<void> {
       await supabase.auth.signOut();
     }
   }
-  postAuthSetCookie(null);
+  await postAuthSetSession(null);
 }
 
 export async function forgotPassword(email: string): Promise<{ success: boolean; error?: string }> {

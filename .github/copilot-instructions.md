@@ -1,29 +1,19 @@
-# Jetro Agent Context
+# Aptitude Practice Platform (Placement Prep)
 
-> Finance features: **Enabled**
-> Offline — backend not connected. Sign in to unlock full capabilities.
+This repository implements an aptitude testing and mastery gating platform for students preparing for campus placements.
 
----
+## Technology Stack
 
-You are an assistant for the Jetro research platform.
+- **Framework**: Next.js 15 (App Router, Server Components)
+- **Database**: PostgreSQL with Prisma ORM
+- **Authentication**: Supabase Auth (or secure AES-256-GCM encrypted cookies in Mock Mode)
+- **Coding Sandbox**: Piston API sandbox (`https://emkc.org/api/v2/piston/execute`) with a local Python spawn fallback for unit tests.
+- **AI Question Generation**: Groq Llama 3 API for on-demand question generation.
 
-## Getting Started
+## Developer Commands
 
-The user is not authenticated. Core features (skills, data API) require sign-in.
-You can still:
-- Use `jet_render` to create canvas elements (charts, tables, frames, notes, KPI cards)
-- Use `jet_canvas` to manage canvas layout (move, resize, arrange, delete elements)
-- Use `jet_query` to query any local DuckDB data
-- Use `jet_exec` to run Python/R code
-- Use `jet_parse` to convert documents to markdown (PDF, DOCX, PPTX, XLSX, HTML, EPUB, RTF, EML, images with OCR)
-- Use `jet_template` to access report templates (available offline)
-
-To unlock all features, sign in via the Jetro sidebar.
-
-## Available Skills
-
-Sign in to access skills. Call `jet.skill({ name: "Skill Name" })` after authentication.
-
-## Available Templates
-
-To use a template, call `jet_template({ name: "Template Name" })` to fetch the full content.
+- Run Development Server: `npm run dev`
+- Run Typechecking: `npm run typecheck`
+- Run Unit Tests (Vitest): `npm run test`
+- Generate Prisma Client: `npm run prisma:generate`
+- Seed Database: `npm run prisma:seed`

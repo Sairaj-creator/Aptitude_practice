@@ -18,12 +18,26 @@ async function getSubjectsWithTopicCounts() {
   }
 }
 
-export default async function SubjectsPage() {
+export default async function SubjectsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const dbSubjects = await getSubjectsWithTopicCounts();
+  const { error } = await searchParams;
 
   return (
     <AppShell activeHref="/subjects">
       <div className="space-y-6">
+        {error && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+            <div className="flex items-center gap-2 font-semibold">
+              <span role="img" aria-label="warning">⚠️</span>
+              <span>Notice</span>
+            </div>
+            <p className="mt-1">{decodeURIComponent(error)}</p>
+          </div>
+        )}
         <div>
           <h1 className="text-3xl font-bold tracking-normal">Subjects</h1>
           <p className="mt-1 text-muted-foreground">Topic pools with Easy → Medium → Hard → Expert mastery progression.</p>
