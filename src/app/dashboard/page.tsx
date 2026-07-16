@@ -1,6 +1,6 @@
 import { Activity, Brain, Clock, Target } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { PracticeOverviewChart } from "@/components/charts/practice-overview";
+import { PracticeOverviewChart } from "@/components/charts/practice-overview-dynamic";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";

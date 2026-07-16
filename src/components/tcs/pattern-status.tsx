@@ -1,17 +1,20 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 
 export function PatternStatus() {
-  const { data } = useQuery({
-    queryKey: ["tcs-nqt-pattern"],
-    queryFn: async () => {
-      const response = await fetch("/api/tcs-nqt/pattern");
-      if (!response.ok) throw new Error("Failed to load pattern");
-      return response.json() as Promise<{ sections: unknown[]; source: string }>;
-    }
-  });
+  const [data, setData] = useState<{ sections: unknown[]; source: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/tcs-nqt/pattern")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load pattern");
+        return res.json();
+      })
+      .then((json) => setData(json))
+      .catch((err) => console.error(err));
+  }, []);
 
   return (
     <Badge variant="secondary">

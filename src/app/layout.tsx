@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { QueryProvider } from "@/components/query-provider";
 
 export const metadata: Metadata = {
   title: "Placement Preparation Platform",
@@ -11,7 +10,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <QueryProvider>{children}</QueryProvider>
+        {children}
       </body>
     </html>
   );

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { type PracticeQuestion } from "@/lib/data/catalog";
 import { isDifficultyMastered } from "@/lib/mastery";
-import { motion, AnimatePresence } from "framer-motion";
+
 
 interface PracticeQuizProps {
   questions: PracticeQuestion[];
@@ -209,13 +209,9 @@ export function PracticeQuiz({ questions, topicSlug, onAnswerSubmitted }: Practi
           </div>
 
           {/* Explanation Boxes (Shown after answering) */}
-          <AnimatePresence>
-            {isAnswered && (
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 15 }}
-                className="space-y-4 pt-4 border-t border-border"
+          {isAnswered && (
+              <div
+                className="space-y-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-4 duration-300"
               >
                 <div className="flex items-center gap-2">
                   {isCorrect ? (
@@ -286,9 +282,8 @@ export function PracticeQuiz({ questions, topicSlug, onAnswerSubmitted }: Practi
                     </label>
                   </div>
                 )}
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
         </CardContent>
 
         <CardFooter className="flex justify-end gap-2 border-t border-border pt-4 bg-muted/10">

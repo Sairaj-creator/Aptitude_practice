@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { PracticeOverviewChart } from "@/components/charts/practice-overview";
+import { PracticeOverviewChart } from "@/components/charts/practice-overview-dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

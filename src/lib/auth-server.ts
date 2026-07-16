@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { type AuthUser, isSupabaseEnabled } from "./auth";
-import { createSupabaseServerClient } from "./supabase";
+import { createSupabaseServerClient } from "./supabase-server";
 import { decryptSession } from "./session";
 
 const SESSION_COOKIE = "placement_prep_session";

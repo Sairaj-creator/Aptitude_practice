@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+
 import { ArrowRight, Building2, LineChart, TimerReset } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 export function LandingHero() {
   return (
     <section className="grid min-h-[calc(100vh-4rem)] items-center gap-10 py-8 lg:grid-cols-[0.95fr_1.05fr]">
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-4 inline-flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
           <Building2 className="h-4 w-4 text-primary" />
           TCS NQT dedicated module included
@@ -31,13 +31,10 @@ export function LandingHero() {
             <Link href="/company-prep/tcs-nqt">Start TCS NQT</Link>
           </Button>
         </div>
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.55, delay: 0.1 }}
-        className="rounded-lg border border-border bg-card p-4 shadow-soft"
+      <div
+        className="animate-in fade-in zoom-in-95 duration-500 delay-100 fill-mode-both rounded-lg border border-border bg-card p-4 shadow-soft"
       >
         <div className="grid gap-3 sm:grid-cols-3">
           {[
@@ -102,7 +99,7 @@ export function LandingHero() {
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </section>
   );
 }

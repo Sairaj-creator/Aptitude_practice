@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { PracticeOverviewChart } from "@/components/charts/practice-overview";
+import { PracticeOverviewChart } from "@/components/charts/practice-overview-dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
